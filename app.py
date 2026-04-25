@@ -2,87 +2,76 @@ import streamlit as st
 from docx import Document
 import io
 import re
+import mammoth
 
-st.set_page_config(page_title="Deep Scan Word Editor", layout="wide")
-st.title("โปรแกรมแก้คำเวอร์ชัน 'สแกนลึกทุกซอกทุกมุม' (Deep Scan) 🚀")
+st.set_page_config(page_title="Professional Word Editor", layout="wide")
+
+# --- การตกแต่งหน้าจอให้เหมือนกระดาษ ---
+st.markdown("""
+    <style>
+    .paper {
+        background-color: white;
+        padding: 40px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        margin: auto;
+        min-height: 500px;
+        width: 100%;
+        color: black;
+        font-family: 'Sarabun', sans-serif;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("โปรแกรมแก้คำเวอร์ชันหน้ากระดาษสมจริง 📄")
 
 uploaded_file = st.file_uploader("เลือกไฟล์ Word (.docx)", type="docx")
 
 if uploaded_file is not None:
+    # อ่านไฟล์ต้นฉบับ
     file_bytes = uploaded_file.read()
+    
+    # --- ส่วนการตั้งค่าการเปลี่ยนคำ ---
+    with st.sidebar:
+        st.header("⚙️ เมนูแก้ไข")
+        old_text = st.text_input("คำเดิมที่ต้องการเปลี่ยน")
+        new_text = st.text_input("คำใหม่ที่ต้องการ")
+        process_btn = st.button("🚀 ยืนยันการเปลี่ยนคำ")
+
+    # --- ส่วนการทำงาน ---
     doc = Document(io.BytesIO(file_bytes))
     
-    col1, col2 = st.columns(2)
-    with col1:
-        old_text = st.text_input("คำเดิมที่ต้องการเปลี่ยน", placeholder="เช่น 1 เมษายน 2569")
-    with col2:
-        new_text = st.text_input("คำใหม่ที่ต้องการ")
-
-    if st.button("🚀 เริ่มเปลี่ยนคำแบบ Deep Scan"):
-        if old_text and new_text:
-            total_changes = 0
-            # สร้าง Pattern สำหรับจัดการเว้นวรรคแบบยืดหยุ่น
-            search_pattern = re.escape(old_text).replace(r'\ ', r'\s+')
-
-            # --- ฟังก์ชันหลักสำหรับเปลี่ยนคำแบบรักษาโครงสร้าง ---
-            def deep_replace(paragraphs):
-                count = 0
-                for p in paragraphs:
-                    if re.search(search_pattern, p.text):
-                        # รวมร่างข้อความใน runs เพื่อป้องกันคำขาดจาก XML
-                        # และรักษาความสวยงามของฟอนต์/รูปภาพ
-                        full_text = re.sub(search_pattern, new_text, p.text)
-                        if p.runs:
-                            p.runs[0].text = full_text
-                            for r in p.runs[1:]:
-                                r.text = ""
-                        else:
-                            p.text = full_text
-                        count += 1
-                return count
-
-            # 1. เนื้อหาหลัก
-            total_changes += deep_replace(doc.paragraphs)
-            
-            # 2. ในตาราง (รวมถึงตารางซ้อนตาราง)
-            for table in doc.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        total_changes += deep_replace(cell.paragraphs)
-                        # กรณีมีตารางซ้อนใน Cell
-                        for nested_table in cell.tables:
-                            for n_row in nested_table.rows:
-                                for n_cell in n_row.cells:
-                                    total_changes += deep_replace(n_cell.paragraphs)
-
-            # 3. ในหัวกระดาษ/ท้ายกระดาษ (ทุกหน้า)
-            for section in doc.sections:
-                total_changes += deep_replace(section.header.paragraphs)
-                total_changes += deep_replace(section.footer.paragraphs)
-
-            # 4. **ท่าไม้ตาย: เจาะลึกกล่องข้อความ (Textboxes)**
-            # เข้าถึงผ่านอีลิเมนต์ภายใน XML ของเอกสาร
-            for p in doc._element.xpath('//w:t'):
+    if process_btn and old_text and new_text:
+        search_pattern = re.escape(old_text).replace(r'\ ', r'\s+')
+        
+        # ฟังก์ชันสแกนเปลี่ยนคำแบบรักษารูปภาพ
+        def replace_all(paragraphs):
+            for p in paragraphs:
                 if re.search(search_pattern, p.text):
                     p.text = re.sub(search_pattern, new_text, p.text)
-                    total_changes += 1
 
-            if total_changes > 0:
-                st.success(f"สำเร็จ! พบและเปลี่ยนคำไปทั้งหมด {total_changes} จุด ครบทุกส่วนแน่นอน")
-                bio = io.BytesIO()
-                doc.save(bio)
-                st.download_button("📥 ดาวน์โหลดไฟล์ที่แก้เสร็จแล้ว", data=bio.getvalue(), file_name=f"DeepFixed_{uploaded_file.name}")
-            else:
-                st.warning("ยังหาคำไม่เจอค่ะ ลองเช็คว่าสะกดถูกหรือก๊อปมาจาก Preview ด้านล่างดูนะค๊ะ")
-
-    # ส่วนตรวจสอบเนื้อหาแบบโชว์ทุกอย่าง
-    st.divider()
-    with st.expander("🔍 ตรวจสอบคำทั้งหมดที่ระบบค้นพบ (สแกนทั้ง 100 หน้า)"):
-        all_text_found = []
-        # ดึงข้อความจาก XML โดยตรงเพื่อให้มั่นใจว่าเห็นครบทุกหน้า
-        for t in doc._element.xpath('//w:t'):
-            if t.text and t.text.strip():
-                all_text_found.append(t.text)
+        # สั่งลุยทุกส่วนของไฟล์ (100 หน้าก็ทำหมด)
+        replace_all(doc.paragraphs)
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    replace_all(cell.paragraphs)
+        for section in doc.sections:
+            replace_all(section.header.paragraphs)
+            replace_all(section.footer.paragraphs)
         
-        st.write(f"พบข้อความทั้งหมด {len(all_text_found)} จุด")
-        st.code(" ".join(all_text_found))
+        st.sidebar.success("✅ เปลี่ยนคำในไฟล์เรียบร้อยแล้ว!")
+        
+        # ปุ่มดาวน์โหลด
+        bio = io.BytesIO()
+        doc.save(bio)
+        st.sidebar.download_button("📥 ดาวน์โหลดไฟล์ที่แก้แล้ว", data=bio.getvalue(), file_name=f"fixed_{uploaded_file.name}")
+
+    # --- ส่วนแสดงผลหน้ากระดาษ (Preview) ---
+    st.subheader("👁️ ตัวอย่างหน้ากระดาษ (Preview)")
+    
+    # แปลง Word เป็น HTML เพื่อโชว์บนเว็บ (จะเห็นรูปและตารางด้วย)
+    result = mammoth.convert_to_html(io.BytesIO(file_bytes))
+    html_content = result.value
+    
+    # ใส่เนื้อหาลงในกล่องที่จัดสไตล์เป็นกระดาษ
+    st.markdown(f'<div class="paper">{html_content}</div>', unsafe_allow_html=True)
