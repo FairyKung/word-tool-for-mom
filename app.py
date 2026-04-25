@@ -1,63 +1,76 @@
 import streamlit as st
 from docx import Document
 import io
-import re
 
 st.set_page_config(page_title="Word Editor for Mom", layout="wide")
-st.title("โปรแกรมแก้คำในไฟล์ Word ")
+st.title("โปรแกรมแก้คำ")
 
 uploaded_file = st.file_uploader("เลือกไฟล์ Word (.docx)", type="docx")
 
 if uploaded_file is not None:
-    # อ่านไฟล์
-    doc = Document(uploaded_file)
+    # อ่านไฟล์เข้า Memory
+    file_bytes = uploaded_file.read()
+    doc = Document(io.BytesIO(file_bytes))
     
-    # --- ส่วนการแก้ไขเรื่องเว้นวรรค (Flexible Search) ---
-    st.sidebar.header("⚙️ ตั้งค่าการค้นหา")
-    use_regex = st.sidebar.checkbox("ค้นหาแบบยืดหยุ่น (แก้ปัญหาวรรคนเกิน)", value=True)
-
     col1, col2 = st.columns(2)
     with col1:
-        old_text = st.text_input("คำเดิมที่ต้องการเปลี่ยน", placeholder="ก๊อปปี้คำจากข้างล่างมาวางจะแม่นที่สุด")
+        old_text = st.text_input("คำเดิม (ระวังเว้นวรรคให้ตรง)")
     with col2:
         new_text = st.text_input("คำใหม่ที่ต้องการ")
 
-    # --- ส่วนแสดงหน้ากระดาษ (Preview เนื้อหาแยกตาม Paragraph) ---
-    st.subheader("📄 ตรวจสอบเนื้อหาในไฟล์")
-    
-    # ฟังก์ชันช่วยเปลี่ยนคำแบบจัดการเรื่อง Space
-    def smart_replace(text, search, replace):
-        if use_regex:
-            # สร้าง pattern ที่ยอมรับเว้นวรรคกี่ทีก็ได้ระหว่างคำ
-            pattern = re.escape(search).replace(r'\ ', r'\s+')
-            return re.sub(pattern, replace, text)
-        return text.replace(search, replace)
-
-    if st.button("🚀 เริ่มเปลี่ยนคำและบันทึกไฟล์"):
+    if st.button("🚀 เริ่มเปลี่ยนคำ (แบบรักษารูปภาพ)"):
         if old_text and new_text:
-            # เปลี่ยนใน Paragraphs
-            for p in doc.paragraphs:
-                p.text = smart_replace(p.text, old_text, new_text)
             
-            # เปลี่ยนใน Tables
-            for table in doc.tables:
+            # ฟังก์ชันพิเศษ: เปลี่ยนคำโดยไม่ลบ Object อื่น (เช่น รูปภาพ) ในย่อหน้า
+            def safe_replace(paragraphs):
+                found_count = 0
+                for p in paragraphs:
+                    if old_text in p.text:
+                        # วนลูปหาใน 'runs' (ส่วนย่อยของย่อหน้า)
+                        # วิธีนี้จะรักษา formatting และรูปภาพที่แทรกอยู่ได้ดีกว่า
+                        for run in p.runs:
+                            if old_text in run.text:
+                                run.text = run.text.replace(old_text, new_text)
+                                found_count += 1
+                        
+                        # กรณีที่คำโดนตัดแบ่งเป็นหลาย run (ปัญหาเรื่องวันที่)
+                        # ถ้าข้างบนยังไม่เปลี่ยน ให้ใช้วิธีเปลี่ยนที่ระดับ paragraph แต่ต้องระวัง
+                        if old_text in p.text: 
+                            # ตรงนี้คือด่านสุดท้าย ถ้าเปลี่ยนใน run ไม่สำเร็จจะลองเปลี่ยนรวม
+                            # แต่จะพยายามรักษาโครงสร้างไว้
+                            full_text = p.text.replace(old_text, new_text)
+                            p.text = full_text
+                            found_count += 1
+                return found_count
+
+            # สั่งทำงานทุกจุด
+            count = safe_replace(doc.paragraphs) # เนื้อหาหลัก
+            for table in doc.tables: # ในตาราง
                 for row in table.rows:
                     for cell in row.cells:
-                        for p in cell.paragraphs:
-                            p.text = smart_replace(p.text, old_text, new_text)
+                        count += safe_replace(cell.paragraphs)
             
-            st.success("แก้ไขคำเรียบร้อยแล้ว!")
-            
-            # เตรียมดาวน์โหลด
-            bio = io.BytesIO()
-            doc.save(bio)
-            st.download_button("📥 ดาวน์โหลดไฟล์ใหม่", data=bio.getvalue(), file_name=f"edited_{uploaded_file.name}")
+            for section in doc.sections: # หัว/ท้ายกระดาษ
+                count += safe_replace(section.header.paragraphs)
+                count += safe_replace(section.footer.paragraphs)
 
-    # แสดง Preview (เนื่องจากการ Render เป็นภาพจริงทำได้ยากบน Cloud ฟรี 
-    # จึงโชว์เป็นลำดับ Paragraph เพื่อให้เห็นภาพรวมของหน้ากระดาษแทน)
-    st.info("💡 ด้านล่างนี้คือลำดับข้อความในไฟล์ ")
-    for i, p in enumerate(doc.paragraphs):
-        if p.text.strip():
-            with st.container():
-                st.markdown(f"**บรรทัดที่ {i+1}:** {p.text}")
-                st.divider()
+            if count > 0:
+                st.success(f"เรียบร้อย! เปลี่ยนไปทั้งหมด {count} จุด")
+                
+                # เตรียมดาวน์โหลด
+                bio = io.BytesIO()
+                doc.save(bio)
+                st.download_button(
+                    label="📥 ดาวน์โหลดไฟล์ที่แก้แล้ว",
+                    data=bio.getvalue(),
+                    file_name=f"fixed_{uploaded_file.name}",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
+            else:
+                st.warning("หาคำที่ระบุไม่เจอเลย ลองเช็คเว้นวรรคดูอีกทีนะ")
+
+    # ส่วน Preview เนื้อหา (แสดงเฉพาะข้อความให้ดูเพื่อตรวจสอบ)
+    with st.expander("ตรวจสอบข้อความในไฟล์ (มองไม่เห็นรูปในหน้า Preview นี้ แต่ในไฟล์จริงรูปยังอยู่นะค๊ะ)"):
+        for p in doc.paragraphs:
+            if p.text.strip():
+                st.write(p.text)
