@@ -3,3 +3,4 @@ python-docx
 doc2pdf # สำหรับแปลงไฟล์ (ถ้า Server รองรับ)
 pdf2image
 pillow
+mammoth
