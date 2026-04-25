@@ -4,9 +4,8 @@ import io
 import re
 import mammoth
 
-st.set_page_config(page_title="Word Editor Pro", layout="wide")
+st.set_page_config(page_title="Word Editor Ultimate Pro", layout="wide")
 
-# CSS ตกแต่งหน้าจอ (คงเดิมไว้เพื่อให้คุณแม่ใช้งานง่าย)
 st.markdown("""
     <style>
     .paper-container { background-color: #f0f2f6; padding: 30px; border-radius: 10px; }
@@ -15,63 +14,78 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("โปรแกรมแก้คำเวอร์ชัน 'ปลดล็อกหน้าแรก' 📄✨")
+st.title("โปรแกรมแก้คำเวอร์ชัน 'เปลี่ยนยกชุด' 📄🚀")
 
-uploaded_file = st.file_uploader("เลือกไฟล์ Word (.docx) ของคุณแม่", type="docx")
+uploaded_file = st.file_uploader("เลือกไฟล์ Word (.docx)", type="docx")
 
 if uploaded_file is not None:
     file_bytes = uploaded_file.read()
     
     with st.sidebar:
-        st.header("🔍 ตั้งค่าการเปลี่ยนคำ")
-        old_text = st.text_input("คำเดิมที่ต้องการเปลี่ยน")
-        new_text = st.text_input("คำใหม่ที่ต้องการ")
+        st.header("🔍 ตั้งค่าการเปลี่ยนคำหลายชุด")
+        st.info("พิมพ์คำเดิม [เครื่องหมายเท่ากับ] คำใหม่ (บรรทัดละคู่)\nเช่น:\n1 เมษายน = 5 พฤษภาคม\nนาย ก = นาย ข")
         
-        if st.button("🚀 เริ่มเปลี่ยนคำทั้งไฟล์ (รวมหน้าแรก)"):
-            if old_text and new_text:
+        # ช่องกรอกแบบหลายบรรทัด
+        mapping_text = st.text_area("รายการคำที่ต้องการเปลี่ยน", height=200)
+        
+        if st.button("🚀 เริ่มเปลี่ยนคำทั้งหมดทันที"):
+            if mapping_text:
                 doc = Document(io.BytesIO(file_bytes))
-                search_pattern = re.escape(old_text).replace(r'\ ', r'\s+')
-                total = 0
+                total_changes = 0
+                
+                # แปลงข้อความที่กรอกมาเป็น Dictionary
+                replace_map = {}
+                for line in mapping_text.split('\n'):
+                    if '=' in line:
+                        parts = line.split('=')
+                        old_val = parts[0].strip()
+                        new_val = parts[1].strip()
+                        if old_val:
+                            replace_map[old_val] = new_val
 
-                # --- 1. ท่าไม้ตายล้างบาง (แก้ทุกจุดที่เป็นตัวอักษรใน XML) ---
-                # วิธีนี้ปกติควรจะครอบคลุมหน้าแรกด้วย แต่เราจะเสริมทัพในข้อ 2
-                for t in doc._element.xpath('//w:t'):
-                    if re.search(search_pattern, t.text):
-                        new_val = re.sub(search_pattern, new_text, t.text)
-                        if t.text != new_val:
-                            t.text = new_val
-                            total += 1
+                if replace_map:
+                    # ฟังก์ชันหลักสำหรับการเปลี่ยนคำ (ใช้ Regex แบบทนทานพิเศษ)
+                    def perform_replace(text):
+                        if not text: return text
+                        new_text = text
+                        for old, new in replace_map.items():
+                            pattern = re.escape(old).replace(r'\ ', r'\s+')
+                            new_text = re.sub(pattern, new, new_text)
+                        return new_text
 
-                # --- 2. บังคับตรวจเช็ค Header/Footer หน้าแรก (กรณีหน้าแรกตั้งค่าแยกไว้) ---
-                def force_replace(paragraphs):
-                    c = 0
-                    for p in paragraphs:
-                        if re.search(search_pattern, p.text):
-                            p.text = re.sub(search_pattern, new_text, p.text)
-                            c += 1
-                    return c
+                    # 1. ท่าไม้ตาย: สแกน XML ทุกอณู (รวมถึงหน้าแรกและกล่องข้อความ)
+                    for t in doc._element.xpath('//w:t'):
+                        original = t.text
+                        replaced = perform_replace(t.text)
+                        if original != replaced:
+                            t.text = replaced
+                            total_changes += 1
 
-                for section in doc.sections:
-                    # เจาะจงหน้าแรก (First Page)
-                    if section.first_page_header:
-                        total += force_replace(section.first_page_header.paragraphs)
-                    if section.first_page_footer:
-                        total += force_replace(section.first_page_footer.paragraphs)
-                    # เจาะจงหน้าคู่/คี่ (Odd/Even)
-                    if section.even_page_header:
-                        total += force_replace(section.even_page_header.paragraphs)
-                    if section.even_page_footer:
-                        total += force_replace(section.even_page_footer.paragraphs)
+                    # 2. บังคับย้ำที่ Paragraphs และ Tables (เพื่อความชัวร์เรื่อง Formatting)
+                    for p in doc.paragraphs:
+                        p.text = perform_replace(p.text)
+                    for table in doc.tables:
+                        for row in table.rows:
+                            for cell in row.cells:
+                                cell.text = perform_replace(cell.text)
 
-                if total > 0:
-                    st.success(f"สำเร็จ! แก้ไขหน้าแรกและหน้าอื่นๆ รวม {total} จุดเรียบร้อยค่ะ")
+                    # 3. ย้ำที่ Header/Footer ทุกหน้า (รวมหน้าแรก)
+                    for section in doc.sections:
+                        for hf in [section.header, section.footer, 
+                                   section.first_page_header, section.first_page_footer,
+                                   section.even_page_header, section.even_page_footer]:
+                            if hf:
+                                for p in hf.paragraphs:
+                                    p.text = perform_replace(p.text)
+
+                    st.success(f"เสร็จเรียบร้อย! แก้ไขไปทั้งหมด {total_changes} จุด")
                     out_bio = io.BytesIO()
                     doc.save(out_bio)
-                    st.download_button("📥 ดาวน์โหลดไฟล์ที่สมบูรณ์", data=out_bio.getvalue(), file_name=f"Fixed_All_{uploaded_file.name}")
+                    st.download_button("📥 ดาวน์โหลดไฟล์", data=out_bio.getvalue(), file_name=f"multi_fixed_{uploaded_file.name}")
                 else:
-                    st.warning("ยังหาคำไม่เจอในหน้าแรกเลยค่ะ ลองเช็คเว้นวรรคดูอีกทีนะค๊ะ")
+                    st.warning("กรุณากรอกรูปแบบให้ถูกต้อง (คำเดิม = คำใหม่)")
 
     # ส่วน Preview
-    st.subheader("👁️ ตรวจสอบเนื้อหา (ลองเช็คหน้าแรกดูนะค๊ะ)")
+    st.subheader("👁️ ตัวอย่างหน้ากระดาษ")
     html_res = mammoth.convert_to_html(io.BytesIO(file_bytes))
     st.markdown(f'<div class="paper-container"><div class="paper-content">{html_res.value}</div></div>', unsafe_allow_html=True)
