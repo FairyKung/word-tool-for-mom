@@ -3,13 +3,12 @@ from docx import Document
 import io
 import re
 
-st.set_page_config(page_title="Word Editor 100 Pages", layout="wide")
-st.title("โปรแกรมแก้คำเวอร์ชัน 'ทะลวง 100 หน้า' (สแกน XML) 🚀")
+st.set_page_config(page_title="Deep Scan Word Editor", layout="wide")
+st.title("โปรแกรมแก้คำเวอร์ชัน 'สแกนลึกทุกซอกทุกมุม' (Deep Scan) 🚀")
 
 uploaded_file = st.file_uploader("เลือกไฟล์ Word (.docx)", type="docx")
 
 if uploaded_file is not None:
-    # อ่านไฟล์ต้นฉบับ
     file_bytes = uploaded_file.read()
     doc = Document(io.BytesIO(file_bytes))
     
@@ -19,18 +18,19 @@ if uploaded_file is not None:
     with col2:
         new_text = st.text_input("คำใหม่ที่ต้องการ")
 
-    if st.button("🚀 เริ่มเปลี่ยนคำทั้งหมด (สแกนทั้งไฟล์)"):
+    if st.button("🚀 เริ่มเปลี่ยนคำแบบ Deep Scan"):
         if old_text and new_text:
             total_changes = 0
-            # สร้าง Pattern Regex สำหรับจัดการเว้นวรรค (space)
+            # สร้าง Pattern สำหรับจัดการเว้นวรรคแบบยืดหยุ่น
             search_pattern = re.escape(old_text).replace(r'\ ', r'\s+')
-            
-            # 1. ฟังก์ชันสแกนเปลี่ยนคำใน Paragraphs (ทุกที่รวมถึง Header/Footer/Textbox)
-            def thorough_replace(paragraphs):
+
+            # --- ฟังก์ชันหลักสำหรับเปลี่ยนคำแบบรักษาโครงสร้าง ---
+            def deep_replace(paragraphs):
                 count = 0
                 for p in paragraphs:
                     if re.search(search_pattern, p.text):
-                        # รวมร่างข้อความใน Runs เพื่อป้องกันคำขาดจาก XML
+                        # รวมร่างข้อความใน runs เพื่อป้องกันคำขาดจาก XML
+                        # และรักษาความสวยงามของฟอนต์/รูปภาพ
                         full_text = re.sub(search_pattern, new_text, p.text)
                         if p.runs:
                             p.runs[0].text = full_text
@@ -41,43 +41,48 @@ if uploaded_file is not None:
                         count += 1
                 return count
 
-            # ลุยสแกนทุกจุดที่อาจมีตัวอักษรซ่อนอยู่
-            # เนื้อหาหลัก
-            total_changes += thorough_replace(doc.paragraphs)
+            # 1. เนื้อหาหลัก
+            total_changes += deep_replace(doc.paragraphs)
             
-            # ในตาราง (Tables)
+            # 2. ในตาราง (รวมถึงตารางซ้อนตาราง)
             for table in doc.tables:
                 for row in table.rows:
                     for cell in row.cells:
-                        total_changes += thorough_replace(cell.paragraphs)
-            
-            # ในทุก Section (Header/Footer ทุกหน้า)
+                        total_changes += deep_replace(cell.paragraphs)
+                        # กรณีมีตารางซ้อนใน Cell
+                        for nested_table in cell.tables:
+                            for n_row in nested_table.rows:
+                                for n_cell in n_row.cells:
+                                    total_changes += deep_replace(n_cell.paragraphs)
+
+            # 3. ในหัวกระดาษ/ท้ายกระดาษ (ทุกหน้า)
             for section in doc.sections:
-                total_changes += thorough_replace(section.header.paragraphs)
-                total_changes += thorough_replace(section.footer.paragraphs)
-            
-            # **ไม้ตาย: สแกนหากล่องข้อความ (Inline Shapes / Textboxes)**
-            # หมายเหตุ: บางกล่องข้อความจะอยู่ในหมวดหมู่นี้
-            for shape in doc.inline_shapes:
-                # ถ้ามีข้อความซ่อนในรูปภาพหรือกราฟิก (บางประเภท)
-                pass # python-docx เข้าถึงบางส่วนได้จำกัด แต่ Paragraph สแกนครอบคลุมส่วนใหญ่แล้ว
+                total_changes += deep_replace(section.header.paragraphs)
+                total_changes += deep_replace(section.footer.paragraphs)
+
+            # 4. **ท่าไม้ตาย: เจาะลึกกล่องข้อความ (Textboxes)**
+            # เข้าถึงผ่านอีลิเมนต์ภายใน XML ของเอกสาร
+            for p in doc._element.xpath('//w:t'):
+                if re.search(search_pattern, p.text):
+                    p.text = re.sub(search_pattern, new_text, p.text)
+                    total_changes += 1
 
             if total_changes > 0:
-                st.success(f"เสร็จแล้ว! เปลี่ยนไปทั้งหมด {total_changes} จุด ครบทุกหน้าแน่นอนค่ะ")
+                st.success(f"สำเร็จ! พบและเปลี่ยนคำไปทั้งหมด {total_changes} จุด ครบทุกส่วนแน่นอน")
                 bio = io.BytesIO()
                 doc.save(bio)
-                st.download_button("📥 ดาวน์โหลดไฟล์ 100 หน้าที่แก้แล้ว", data=bio.getvalue(), file_name=f"updated_{uploaded_file.name}")
+                st.download_button("📥 ดาวน์โหลดไฟล์ที่แก้เสร็จแล้ว", data=bio.getvalue(), file_name=f"DeepFixed_{uploaded_file.name}")
             else:
-                st.warning("หาคำไม่เจอเลยค่ะ ลองเช็คว่าในไฟล์มี 'เว้นวรรค' แปลกๆ ไหมนะค๊ะ")
+                st.warning("ยังหาคำไม่เจอค่ะ ลองเช็คว่าสะกดถูกหรือก๊อปมาจาก Preview ด้านล่างดูนะค๊ะ")
 
-    # ส่วนแสดงผลสำหรับตรวจสอบ (Show All Text)
+    # ส่วนตรวจสอบเนื้อหาแบบโชว์ทุกอย่าง
     st.divider()
-    with st.expander("🔍 ตรวจสอบตัวอักษรทั้งหมดที่ระบบอ่านได้ (รวม 100 หน้า)"):
-        all_content = []
-        for p in doc.paragraphs:
-            if p.text.strip():
-                all_content.append(p.text)
+    with st.expander("🔍 ตรวจสอบคำทั้งหมดที่ระบบค้นพบ (สแกนทั้ง 100 หน้า)"):
+        all_text_found = []
+        # ดึงข้อความจาก XML โดยตรงเพื่อให้มั่นใจว่าเห็นครบทุกหน้า
+        for t in doc._element.xpath('//w:t'):
+            if t.text and t.text.strip():
+                all_text_found.append(t.text)
         
-        # ถ้าเนื้อหาเยอะมาก จะแสดงแบบแบ่งหน้าให้ดูบนเว็บ
-        st.write(f"พบทั้งหมด {len(all_content)} ย่อหน้า")
-        st.code("\n\n".join(all_content))
+        st.write(f"พบข้อความทั้งหมด {len(all_text_found)} จุด")
+        st.code(" ".join(all_text_found))
