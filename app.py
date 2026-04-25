@@ -7,7 +7,7 @@ st.title("โปรแกรมแก้คำในไฟล์ Word ")
 st.write("อัปโหลดไฟล์ พิมพ์คำที่ต้องการเปลี่ยน ")
 
 # 1. ส่วนการอัปโหลดไฟล์
-uploaded_file = st.file_plus_input("เลือกไฟล์ Word (.docx)", type="docx")
+uploaded_file = st.file_uploader("เลือกไฟล์ Word (.docx)", type="docx")
 
 if uploaded_file is not None:
     # 2. ส่วนกรอกข้อมูล
